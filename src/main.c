@@ -34,11 +34,13 @@ int main(void)
     uint32_t start = now_ms();
 
     input_tasks_init();
+	board_led_write(true);
 
     while (1)
     {
         tud_task();
         bool active = (now_ms() - start) < duration_ms;
+		board_led_write(active);
         input_tasks_run(active);
     }
 }
