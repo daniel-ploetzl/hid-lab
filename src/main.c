@@ -16,6 +16,8 @@
  */
 
 #include "pico/stdlib.h"
+#include "pico/time.h"
+#include "bsp/board.h"
 #include "tusb.h"
 #include "input_tasks.h"
 #include "flash_config.h"

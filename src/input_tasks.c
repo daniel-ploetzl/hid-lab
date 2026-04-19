@@ -83,9 +83,7 @@ static int32_t rand_range_i32(int32_t min, int32_t max)
 /* ───────── Stop flag ───────── */
 static bool released_all = false;
 
-/* ══════════════════════════════════════════════════════
- * ACTIVITY 1 — MOUSE MICRO-MOVEMENT
- * ══════════════════════════════════════════════════════ */
+/* ───────── Mouse movement ───────── */
 static uint32_t move_next;
 
 static void move_init(void)
@@ -108,9 +106,7 @@ static void move_task(void)
     move_next = now_ms() + rand_range(MOVE_INTERVAL_MIN_MS, MOVE_INTERVAL_MAX_MS);
 }
 
-/* ══════════════════════════════════════════════════════
- * ACTIVITY 2 — MOUSE LEFT CLICK
- * ══════════════════════════════════════════════════════ */
+/* ───────── Mouse left click ───────── */
 typedef enum { C_IDLE, C_DOWN } cphase_t;
 
 static struct {
@@ -142,9 +138,7 @@ static void click_task(void)
     }
 }
 
-/* ══════════════════════════════════════════════════════
- * ACTIVITY 3 — SAFE KEY PRESS
- * ══════════════════════════════════════════════════════ */
+/* ───────── Safe key press ───────── */
 static const uint8_t safe_keys[] = {
     HID_KEY_SHIFT_LEFT, HID_KEY_CONTROL_LEFT,
     HID_KEY_ALT_LEFT,
@@ -183,17 +177,7 @@ static void key_task(void)
         key.p    = K_IDLE;
     }
 }
-
-/* ══════════════════════════════════════════════════════
- * ACTIVITY 4 — TEXT BURST
- *
- * Sends short bursts of home-row keys + SPACE.
- * ENTER intentionally excluded — too destructive
- * (submits forms, executes terminal commands).
- *
- * Three-phase state machine:
- *   T_IDLE → T_KEY_DOWN → T_KEY_GAP → ... → T_IDLE
- * ══════════════════════════════════════════════════════ */
+/* ───────── Text burst  ───────── */
 static const uint8_t text_keys[] = {
     HID_KEY_A, HID_KEY_S, HID_KEY_D, HID_KEY_F,
     HID_KEY_J, HID_KEY_K, HID_KEY_L,
@@ -259,16 +243,7 @@ static void text_task(void)
     }
 }
 
-/* ══════════════════════════════════════════════════════
- * ACTIVITY 5 — SCROLL BURST
- *
- * Two-phase state machine per tick:
- *   S_IDLE → S_STEP_ACTIVE → S_STEP_GAP → ... → S_IDLE
- *
- * Wheel delta: -2 to +2 using signed rand to avoid
- * uint32_t underflow bug (never pass negative literals
- * to rand_range).
- * ══════════════════════════════════════════════════════ */
+/* ───────── Scroll burst  ───────── */
 typedef enum { S_IDLE, S_STEP_ACTIVE, S_STEP_GAP } sphase_t;
 
 static struct {
@@ -326,16 +301,7 @@ static void scroll_task(void)
     }
 }
 
-/* ══════════════════════════════════════════════════════
- * ACTIVITY 6 — WINDOW SWITCH (ALT+TAB)
- *
- * Three-phase state machine per switch:
- *   W_IDLE → W_KEY_DOWN → W_KEY_GAP → ... → W_IDLE
- *
- * KEYBOARD_MODIFIER_LEFTALT passed as modifier byte,
- * HID_KEY_TAB as keycode — correct TinyUSB pattern for
- * modifier + key combinations.
- * ══════════════════════════════════════════════════════ */
+/* ───────── Window switch  ───────── */
 typedef enum { W_IDLE, W_KEY_DOWN, W_KEY_GAP } wphase_t;
 
 static struct {
@@ -396,9 +362,7 @@ static void window_task(void)
     }
 }
 
-/* ══════════════════════════════════════════════════════
- * STOP — release all held inputs exactly once
- * ══════════════════════════════════════════════════════ */
+/* ───────── Release all inputs  ───────── */
 static void release_all_inputs_once(void)
 {
     if (released_all || !tud_hid_ready())
@@ -411,9 +375,7 @@ static void release_all_inputs_once(void)
     released_all = true;
 }
 
-/* ══════════════════════════════════════════════════════
- * PUBLIC API
- * ══════════════════════════════════════════════════════ */
+/* ───────── Public API  ───────── */
 void input_tasks_init(void)
 {
     move_init();

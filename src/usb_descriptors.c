@@ -96,8 +96,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 	{
         memcpy(&_desc_str[1], string_desc_arr[0], 2);
         chr_count = 1;
-    }
-	else
+    } else
 	{
         if (index >= (uint8_t)(sizeof(string_desc_arr) / sizeof(string_desc_arr[0])))
             return NULL;
