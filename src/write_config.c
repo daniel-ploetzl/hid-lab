@@ -1,13 +1,6 @@
 /*
- *  Host-side tool — writes duration config as a UF2 file
- *  directly to the RP2350 BOOTSEL mass storage mount.
- *
- *  UF2 is the native format the RP2350 bootloader accepts over
- *  mass storage. Each 512-byte UF2 block carries 256 bytes of
- *  payload to a target XIP flash address. Wrap the 8-byte
- *  config blob in one UF2 block targeting the last flash sector
- *  (0x103FF000) and copy it to the mounted drive — identical to
- *  how the firmware .uf2 is flashed.
+ *  Host-side tool to write duration config as a UF2 file
+ *  directly to the RP2350 BOOTSEL mount point.
  *
  * CONFIG LAYOUT IN FLASH (last 4KB sector, offset 0x3FF000):
  *   [0..3]  magic  = 0xCAFEF00D  (little-endian u32)
@@ -31,7 +24,7 @@
 /* ── Config ──────────────────────────────── */
 #define CONFIG_MAGIC      0xCAFEF00DUL
 #define CONFIG_FLASH_ADDR 0x103FF000UL
-#define MAX_HOURS         48
+#define MAX_HOURS         24
 
 typedef struct __attribute__((packed)) {
     uint32_t magic0;
@@ -54,6 +47,21 @@ static void write_le32(uint8_t *buf, uint32_t v)
     buf[3] = v >> 24;
 }
 
+static void build_block(uf2_block_t *b, uint8_t cfg[8])
+{
+    memset(b, 0, sizeof(*b));
+    b->magic0 = UF2_MAGIC_START0;
+    b->magic1 = UF2_MAGIC_START1;
+    b->flags  = UF2_FLAG_FAMILY_ID;
+    b->target_addr = CONFIG_FLASH_ADDR;
+    b->payload_size = UF2_PAYLOAD_SIZE;
+    b->block_no = 0;
+    b->total_blocks = 1;
+    b->family_id = UF2_FAMILY_RP2350;
+    b->magic_end = UF2_MAGIC_END;
+    memcpy(b->data, cfg, 8);
+}
+
 int main(int ac, char **av)
 {
     if (ac != 2)
@@ -62,46 +70,48 @@ int main(int ac, char **av)
         return 1;
     }
 
-    long hours = strtol(av[1], NULL, 10);
-    if (hours < 1 || hours > MAX_HOURS)
+	char *end = NULL;
+	long hours = strtol(av[1], &end, 10);
+
+    if ( *end != '\0' || hours < 1 || hours > MAX_HOURS)
 	{
         fprintf(stderr, "Invalid hours (1-%d)\n", MAX_HOURS);
         return 1;
     }
 
-    const char *mount = av[2];
-
-    uint8_t config[8];
-    write_le32(config, CONFIG_MAGIC);
-    write_le32(config + 4, (uint32_t)hours);
-
-    uf2_block_t block = {0};
-
-    block.magic0 = UF2_MAGIC_START0;
-    block.magic1 = UF2_MAGIC_START1;
-    block.flags = UF2_FLAG_FAMILY_ID;
-    block.target_addr = CONFIG_FLASH_ADDR;
-    block.payload_size = UF2_PAYLOAD_SIZE;
-    block.block_no = 0;
-    block.total_blocks = 1;
-    block.family_id = UF2_FAMILY_RP2350;
-    block.magic_end = UF2_MAGIC_END;
-
-    memcpy(block.data, config, sizeof(config));
-
-    char path[512];
-    snprintf(path, sizeof(path), "%s/pico_hid_cfg.uf2", mount);
-
-    FILE *f = fopen(path, "wb");
-    if (!f)
+	const char *user = getenv("USER");
+    if (!user)
 	{
-        perror("fopen");
+        fprintf(stderr, "Error: USER environment variable not set\n");
         return 1;
     }
 
-    fwrite(&block, 1, sizeof(block), f);
-    fclose(f);
+	uint8_t cfg[8];
+	write_le32(cfg, CONFIG_MAGIC);
+	write_le32(cfg + 4, (uint32_t)hours);
 
-    printf("Wrote config to %s\n", path);
-    return 0;
+	uf2_block_t block;
+	build_block(&block, cfg);
+
+	char path[512];
+	snprintf(path, sizeof(path), "/media/%s/RP2350/pico_hid_cfg.uf2", user);
+
+	FILE *f = fopen(path, "wb");
+	if (!f)
+	{
+		fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
+		return 1;
+	}
+
+	if (fwrite(&block, 1, sizeof(block), f) != sizeof(block))
+	{
+		fprintf(stderr, "Write failed: %s\n", strerror(errno));
+		fclose(f);
+		return 1;
+	}
+
+	fclose(f);
+	printf("UF2 written to %s\n", path);
+    printf("Configured runtime: %ld hours\n", hours);
+	return 0;
 }
