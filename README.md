@@ -44,3 +44,42 @@ Requires Raspberry Pi Pico SDK.
 mkdir build && cd build
 cmake .. -DPICO_BOARD=pico2
 make -j$(nproc)
+```
+
+## Flash layout and safety
+
+The project uses a fixed flash partition for Pico 2 (4MB external flash):
+
+- Firmware range (linked and used by `hid_lab.uf2`): `0x10000000 .. 0x103FEFFF` (`0x003FF000` bytes)
+- Reserved config sector (written by `write_config`): `0x103FF000 .. 0x103FFFFF` (last 4KB sector)
+
+Why this is safe:
+
+- `CMakeLists.txt` sets `PICO_FLASH_SIZE_BYTES` to `0x003FF000`, so firmware outputs cannot grow into the last sector.
+- `write_config.c` writes only the reserved last sector.
+
+## Config format and meaning
+
+The config sector stores 8 bytes at the start of the sector:
+
+- `[0..3]` magic `0xCAFEF00D` (marks data as valid config)
+- `[4..7]` runtime hours (`1..24`)
+
+`CONFIG_MAGIC` exists so firmware can distinguish valid config from erased/random flash content.
+If config is invalid or missing, firmware uses `CONFIG_DEFAULT_HOURS`.
+
+## Host config writer
+
+Build:
+
+```bash
+gcc src/write_config.c -o write_config
+```
+
+Use:
+
+```bash
+write_config <hours>
+```
+
+This writes `pico_hid_cfg.uf2` to `/media/$USER/RP2350/`.

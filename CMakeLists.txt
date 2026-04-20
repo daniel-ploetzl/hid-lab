@@ -8,6 +8,11 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Keep last 4KB flash sector free for persistent runtime config.
+# - write_config.c targets 0x103FF000, so firmware must only link/use
+#   the lower 0x003FF000 bytes of flash.
+set(PICO_FLASH_SIZE_BYTES 0x003FF000)
+
 pico_sdk_init()
 
 add_executable(hid_lab
