@@ -12,7 +12,7 @@
 #define CONFIG_HOURS_MAX         24UL
 #define CONFIG_DEFAULT_HOURS     24UL
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint32_t magic;
     uint32_t hours;
 } pico_config_t;

@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+#include "flash_config.h"
 
 /* ── UF2 constants ───────────────────────── */
 #define UF2_MAGIC_START0   0x0A324655UL
@@ -20,11 +21,6 @@
 #define UF2_FLAG_FAMILY_ID 0x00002000UL
 #define UF2_FAMILY_RP2350  0xE48BFF59UL
 #define UF2_PAYLOAD_SIZE   256
-
-/* ── Config ──────────────────────────────── */
-#define CONFIG_MAGIC      0xCAFEF00DUL
-#define CONFIG_FLASH_ADDR 0x103FF000UL
-#define MAX_HOURS         24
 
 typedef struct __attribute__((packed)) {
     uint32_t magic0;
@@ -65,26 +61,18 @@ static void build_block(uf2_block_t *b, uint8_t cfg[8])
 int main(int ac, char **av)
 {
     if (ac != 2)
-	{
-        fprintf(stderr, "Usage: %s <hours>\n", av[0]);
-        return 1;
-    }
+		return (fprintf(stderr, "Usage: %s <hours>\n", av[0]), 1);
 
 	char *end = NULL;
 	long hours = strtol(av[1], &end, 10);
 
-    if ( *end != '\0' || hours < 1 || hours > MAX_HOURS)
-	{
-        fprintf(stderr, "Invalid hours (1-%d)\n", MAX_HOURS);
-        return 1;
-    }
+    if ( *end != '\0' || hours < (long)CONFIG_HOURS_MIN || hours > (long)CONFIG_HOURS_MAX)
+		return (fprintf(stderr, "Error: hours must be %ld-%ld (got %ld)\n",
+						(long)CONFIG_HOURS_MIN, (long)CONFIG_HOURS_MAX, hours), 1);
 
 	const char *user = getenv("USER");
     if (!user)
-	{
-        fprintf(stderr, "Error: USER environment variable not set\n");
-        return 1;
-    }
+		return (fprintf(stderr, "Error: USER environment variable not set\n"), 1);
 
 	uint8_t cfg[8];
 	write_le32(cfg, CONFIG_MAGIC);
@@ -98,10 +86,7 @@ int main(int ac, char **av)
 
 	FILE *f = fopen(path, "wb");
 	if (!f)
-	{
-		fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
-		return 1;
-	}
+		return (fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno)), 1);
 
 	if (fwrite(&block, 1, sizeof(block), f) != sizeof(block))
 	{
