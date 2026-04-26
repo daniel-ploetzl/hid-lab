@@ -3,10 +3,6 @@
 
 #define CFG_TUSB_RHPORT0_MODE   OPT_MODE_DEVICE
 
-#ifndef CFG_TUSB_OS
-#define CFG_TUSB_OS             OPT_OS_NONE
-#endif
-
 #define CFG_TUD_ENDPOINT0_SIZE  64
 
 #define CFG_TUD_HID             1
