@@ -37,7 +37,7 @@ It generates time-driven, non-deterministic keyboard and mouse activity for rese
 
 ### Host utility
 
-- `src/write_config.
+- `src/write_config.c`
   Host-side tool that generates a UF2 payload to write configuration into a reserved flash sector.
 
 ---
@@ -73,8 +73,16 @@ Input generation is implemented as independent time-based state machines:
 ### Timing model
 
 - intervals are bounded random values (uniform distribution unless otherwise stated)
-- randomness sourced from RP2350 hardware True Random Number Generator (TRNG) via `pico_rand`
+- randomness is sourced from `pico_rand`, a PRNG seeded from several entropy sources on the RP2350, the hardware TRNG among them
 - each subsystem operates independently (no global synchronisation)
+
+### Report model
+
+A HID report carries the full current state of the device, so overlapping subsystems must not each transmit their own report.
+
+- the mouse uses a single-writer flush: `click_task` owns the button (level state) whilst `move_task` and `scroll_task` write transient deltas, and only `mouse_flush()` transmits, so a movement or scroll cannot clear a held button
+- the keyboard subsystems transmit directly, one activity at a time in practice given the interval spacing
+- every send checks its return value and advances its state machine only once the report is queued, so a busy endpoint never drops one half of a press or release pair
 
 ---
 
@@ -179,6 +187,15 @@ make -j$(nproc)
 - .uf2 firmware image
 - .elf executable
 - .bin raw binary
+
+---
+
+## Verification
+
+Device behaviour is observed host-side on Linux.
+
+- `sudo evtest` on the keyboard and mouse event nodes shows the raw event stream. The invariant: every key or button down has a matching up before the next unrelated event, and ALT is released cleanly after each ALT+TAB.
+- `sudo usbhid-dump -m 2e8a:0003 -e stream` shows raw reports. During a click hold the mouse button field stays set whilst only the delta bytes vary.
 
 ---
 
