@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.13)
 
 # Must be set before the SDK import, which selects the board. Without it the
 # SDK silently falls back to the RP2040 Pico, which this project cannot target.
-set(PICO_BOARD pico2 CACHE STRING "Target board; flash layout assumes Pico 2")
+set(PICO_BOARD pico2_w CACHE STRING "Target board: pico2_w, or pico2 for no Wi-Fi")
 
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
@@ -21,7 +21,7 @@ set(PICO_FLASH_SIZE_BYTES 0x003FF000)
 pico_sdk_init()
 
 if(NOT PICO_PLATFORM MATCHES "^rp2350")
-    message(FATAL_ERROR "unsupported platform ${PICO_PLATFORM}: write_config emits RP2350 UF2 files")
+    message(FATAL_ERROR "unsupported board ${PICO_BOARD}: write_config emits RP2350 UF2 files")
 endif()
 
 add_executable(hid_lab
@@ -53,5 +53,12 @@ target_link_libraries(hid_lab
     tinyusb_device
     tinyusb_board
 )
+
+# Wi-Fi is built only for boards with a radio; inc/wifi_manager.h stubs it otherwise.
+if(PICO_CYW43_SUPPORTED)
+    target_sources(hid_lab PRIVATE src/wifi_manager.c)
+    target_compile_definitions(hid_lab PRIVATE HID_LAB_WIFI=1)
+    target_link_libraries(hid_lab pico_cyw43_arch_lwip_poll)
+endif()
 
 pico_add_extra_outputs(hid_lab)
