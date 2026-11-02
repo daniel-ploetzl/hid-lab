@@ -1,12 +1,11 @@
 /*
- * PURPOSE : TinyUSB descriptor callbacks — composite HID device presenting
+ * PURPOSE : TinyUSB descriptor callbacks - composite HID device presenting
  *           both a keyboard (report ID 1) and a mouse (report ID 2) on a
  *           single interface with a single interrupt endpoint.
  *
- * WHY single interface: using two separate HID interfaces would require
- * two interrupt IN endpoints. RP2350 supports only 16 endpoints total and
- * the BSP/TinyUSB default config allocates one. One interface, two report
- * IDs is the standard pattern for combo HID devices.
+ * WHY single interface: it is simpler. One interface with two report IDs
+ * carries both devices over one endpoint. Endpoint count is not the limit,
+ * because the hardware has endpoints to spare.
  */
 
 #include <string.h>
