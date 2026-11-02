@@ -21,6 +21,7 @@
 #define UF2_FLAG_FAMILY_ID 0x00002000UL
 #define UF2_FAMILY_RP2350  0xE48BFF59UL
 #define UF2_PAYLOAD_SIZE   256
+#define UF2_DATA_SIZE      476
 
 typedef struct __attribute__((packed)) {
     uint32_t magic0;
@@ -31,9 +32,11 @@ typedef struct __attribute__((packed)) {
     uint32_t block_no;
     uint32_t total_blocks;
     uint32_t family_id;
-    uint8_t  data[UF2_PAYLOAD_SIZE];
+    uint8_t  data[UF2_DATA_SIZE];
     uint32_t magic_end;
 } uf2_block_t;
+
+_Static_assert(sizeof(uf2_block_t) == 512, "UF2 blocks must be exactly 512 bytes");
 
 static void write_le32(uint8_t *buf, uint32_t v)
 {

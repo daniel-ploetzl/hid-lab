@@ -1,5 +1,5 @@
 /*
- * HID Behaviour Simulation Lab (RP2350 / Pico 2)
+ * HID Behaviour Simulation Lab (RP2350 / Pico 2 and Pico 2 W)
  *
  *   Simulate realistic human input patterns via USB HID to analyse
  *   system behaviour, detection mechanisms and activity heuristics.
@@ -21,6 +21,7 @@
 #include "bsp/board.h"
 #include "tusb.h"
 #include "input_tasks.h"
+#include "wifi_manager.h"
 #include "flash_config.h"
 #include <assert.h>
 
@@ -37,22 +38,38 @@ static inline uint32_t now_ms(void)
     return to_ms_since_boot(get_absolute_time());
 }
 
+/* On the Pico 2 W each LED write is a bus transaction to the radio chip. */
+static void led_update(bool on)
+{
+    static bool led_on;
+    static bool led_known;
+
+    if (led_known && led_on == on)
+        return;
+    status_led_write(on);
+    led_on = on;
+    led_known = true;
+}
+
 int main(void)
 {
     board_init();
+    wifi_manager_init();
     tusb_init();
 
     uint32_t duration_ms = config_read_hours() * 3600UL * 1000UL;
     uint32_t start = now_ms();
 
     input_tasks_init();
-	board_led_write(true);
+	led_update(true);
 
     while (1)
     {
         tud_task();
-        bool active = (now_ms() - start) < duration_ms;
-		board_led_write(active);
+        wifi_manager_task();
+        uint32_t now = now_ms();
+        bool active = (now - start) < duration_ms;
+        led_update(status_led_state(active, now));
         input_tasks_run(active);
     }
 }

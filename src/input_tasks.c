@@ -399,7 +399,7 @@ static void window_task(void)
     switch (window.p) {
 
     case W_IDLE:
-        if (now < window.next || tud_hid_ready())
+        if (now < window.next || !tud_hid_ready())
             return;
         window.remaining = (uint8_t)rand_range(WINDOW_BURST_SWITCHES_MIN,
                                                WINDOW_BURST_SWITCHES_MAX);

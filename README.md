@@ -1,8 +1,8 @@
-# hid-lab — USB HID Behaviour Simulation Lab (Raspberry Pi Pico 2)
+# hid-lab — USB HID Behaviour Simulation Lab (Raspberry Pi Pico 2 / Pico 2 W)
 
 ## Overview
 
-This project implements a composite USB Human Interface Device (HID) behaviour simulator on Raspberry Pi Pico 2.
+This project implements a composite USB Human Interface Device (HID) behaviour simulator on Raspberry Pi Pico 2 and Pico 2 W. Wi-Fi is available on the Pico 2 W only.
 It generates time-driven, non-deterministic keyboard and mouse activity for research and educational analysis of:
 
 - USB HID behaviour modelling
@@ -23,6 +23,9 @@ It generates time-driven, non-deterministic keyboard and mouse activity for rese
 
 - `src/input_tasks.c`
   Behaviour engine implementing independent state machines for HID actions.
+
+- `src/wifi_manager.c` (Pico 2 W only)
+  Non-blocking station state machine: connect, monitor link, reconnect with backoff.
 
 - `src/usb_descriptors.c`
   USB descriptor definitions for composite HID device:
@@ -47,6 +50,7 @@ It generates time-driven, non-deterministic keyboard and mouse activity for rese
 The firmware is based on a **cooperative, non-preemptive scheduling loop**:
 
 - `tud_task()` must be called continuously for USB stack progress
+- `wifi_manager_task()` services the radio through `cyw43_arch_poll()` from the same loop, with no background thread or interrupt
 - `input_tasks_run(active)` executes all HID behaviour logic
 - timing is derived from a monotonic millisecond clock:
   `to_ms_since_boot(get_absolute_time())`
@@ -103,7 +107,7 @@ The device is implemented as a **composite HID interface with report IDs**:
 
 ## Flash Layout and Safety
 
-Pico 2 flash map (4 MB):
+Pico 2 and Pico 2 W flash map (4 MB):
 
 - Firmware region: `0x10000000 .. 0x103FEFFF` (`0x003FF000` bytes)
 - Reserved config sector: `0x103FF000 .. 0x103FFFFF` (last 4 KB sector)
@@ -117,7 +121,7 @@ Enforced at build time:
 - the `PICO_FLASH_SIZE_BYTES` CMake variable limits the linker's `FLASH` region to `0x003FF000` bytes, so an oversized image fails to link
 - `static_assert`s in `src/main.c` fail the build unless the linker region ends exactly at `CONFIG_FLASH_ADDR` and `flash_config.h` matches the board's flash size and sector size
 - a `_Static_assert` in `inc/flash_config.h` fails both the firmware and host builds if `pico_config_t` stops being the 8 bytes `write_config` writes
-- `PICO_BOARD` defaults to `pico2`, and CMake configuration fails for any non-RP2350 platform
+- `PICO_BOARD` defaults to `pico2_w`, and CMake configuration fails for any non-RP2350 platform
 
 The checks exist because the layout is defined in two places, `CMakeLists.txt` and `inc/flash_config.h`. Without them, either side could change and the build would still succeed.
 
@@ -125,6 +129,25 @@ Limits of this protection:
 
 - the reduced size applies to the linker only. C code still sees the board's real size in `PICO_FLASH_SIZE_BYTES`, and must: the SDK derives the flash device size from it and needs a power of two, and its bounds check would otherwise reject the config sector
 - writing only to `CONFIG_FLASH_ADDR` is a convention, not a restriction. `write_config` is the only writer in this repository, but nothing stops another UF2 or a flash API call from changing that sector
+
+---
+
+## Wi-Fi
+
+Built when the board has a CYW43 radio; on a Pico 2 the same API compiles to inline stubs.
+
+- `wifi_manager_task()` runs from the main loop and never blocks, so a network failure cannot delay USB or HID behaviour
+- a join that fails, or finds no DHCP lease within 30 s, retries after 2 s, doubling to 60 s; a wrong password retries at 60 s
+- DHCP and DNS are provided by lwIP, which is configured for UDP only in `inc/lwipopts.h`
+- the status LED is on the radio chip, so it needs the radio to start. Solid means online or no network configured, blinking means not online yet (including joined with no DHCP lease), and off means the run has finished
+
+### Credentials
+
+```bash
+cp inc/wifi_secrets.example.h inc/wifi_secrets.h
+```
+
+`inc/wifi_secrets.h` is gitignored. Without it the firmware makes no connection attempt. `WIFI_AUTH` selects the security mode and defaults to WPA2 when unset; set it to `CYW43_AUTH_WPA3_SAE_AES_PSK` for WPA3-Personal. There is no automatic fallback between the two. The password is stored in plaintext in the firmware image and UF2, so use a dedicated network and do not share those files.
 
 ---
 
@@ -194,7 +217,15 @@ cmake ..
 make -j$(nproc)
 ```
 
-`PICO_BOARD` defaults to `pico2`. An existing build directory keeps the board it was configured with, so a build directory created for another board fails until it is removed.
+Use one build directory per board. For a Pico 2 without Wi-Fi:
+
+```bash
+mkdir build-pico2 && cd build-pico2
+cmake .. -DPICO_BOARD=pico2
+make -j$(nproc)
+```
+
+`PICO_BOARD` defaults to `pico2_w`. An existing build directory keeps the board it was configured with, so a build directory created for another board fails until it is removed.
 
 ### Outputs
 
