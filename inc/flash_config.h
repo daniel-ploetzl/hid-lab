@@ -17,6 +17,8 @@ typedef struct {
     uint32_t hours;
 } pico_config_t;
 
+_Static_assert(sizeof(pico_config_t) == 8, "config layout changed, update write_config.c");
+
 static inline uint32_t config_read_hours(void)
 {
     const pico_config_t *cfg = (const pico_config_t *) CONFIG_FLASH_ADDR;
