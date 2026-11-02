@@ -108,11 +108,23 @@ Pico 2 flash map (4 MB):
 - Firmware region: `0x10000000 .. 0x103FEFFF` (`0x003FF000` bytes)
 - Reserved config sector: `0x103FF000 .. 0x103FFFFF` (last 4 KB sector)
 
-### Safety invariant:
+### Safety invariant
 
-- Firmware image is constrained to exclude the last flash sector
-- `PICO_FLASH_SIZE_BYTES` is reduced to reserve the final 4 KB sector
-- configuration writes are restricted to `CONFIG_FLASH_ADDR`
+The firmware image must end before the config sector. If it overlapped, `config_read_hours()` would read firmware bytes and silently fall back to `CONFIG_DEFAULT_HOURS`, and writing a config would overwrite part of the firmware.
+
+Enforced at build time:
+
+- the `PICO_FLASH_SIZE_BYTES` CMake variable limits the linker's `FLASH` region to `0x003FF000` bytes, so an oversized image fails to link
+- `static_assert`s in `src/main.c` fail the build unless the linker region ends exactly at `CONFIG_FLASH_ADDR` and `flash_config.h` matches the board's flash size and sector size
+- a `_Static_assert` in `inc/flash_config.h` fails both the firmware and host builds if `pico_config_t` stops being the 8 bytes `write_config` writes
+- `PICO_BOARD` defaults to `pico2`, and CMake configuration fails for any non-RP2350 platform
+
+The checks exist because the layout is defined in two places, `CMakeLists.txt` and `inc/flash_config.h`. Without them, either side could change and the build would still succeed.
+
+Limits of this protection:
+
+- the reduced size applies to the linker only. C code still sees the board's real size in `PICO_FLASH_SIZE_BYTES`, and must: the SDK derives the flash device size from it and needs a power of two, and its bounds check would otherwise reject the config sector
+- writing only to `CONFIG_FLASH_ADDR` is a convention, not a restriction. `write_config` is the only writer in this repository, but nothing stops another UF2 or a flash API call from changing that sector
 
 ---
 
@@ -178,9 +190,11 @@ Generates a UF2 payload that writes configuration data into the reserved flash s
 
 ```bash
 mkdir build && cd build
-cmake .. -DPICO_BOARD=pico2
+cmake ..
 make -j$(nproc)
 ```
+
+`PICO_BOARD` defaults to `pico2`. An existing build directory keeps the board it was configured with, so a build directory created for another board fails until it is removed.
 
 ### Outputs
 

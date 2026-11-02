@@ -17,10 +17,20 @@
 
 #include "pico/stdlib.h"
 #include "pico/time.h"
+#include "hardware/flash.h"
 #include "bsp/board.h"
 #include "tusb.h"
 #include "input_tasks.h"
 #include "flash_config.h"
+#include <assert.h>
+
+/* ───────── Flash reservation checks  ───────── */
+static_assert(CONFIG_FLASH_ADDR - CONFIG_FLASH_XIP_BASE == HID_LAB_LINK_FLASH_BYTES,
+              "linker FLASH region must end exactly at the config sector");
+static_assert(CONFIG_FLASH_TOTAL_BYTES == PICO_FLASH_SIZE_BYTES,
+              "flash_config.h flash size must match the board");
+static_assert(CONFIG_SECTOR_SIZE_BYTES == FLASH_SECTOR_SIZE,
+              "flash_config.h sector size must match the SDK");
 
 static inline uint32_t now_ms(void)
 {
