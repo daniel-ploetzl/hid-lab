@@ -11,6 +11,16 @@ It generates time-driven, non-deterministic keyboard and mouse activity for rese
 
 ---
 
+## Engineering properties
+
+- **Cooperative non-blocking scheduling:** one main loop with no RTOS, threads or sleeping, so USB and Wi-Fi are serviced on every pass
+- **Single-writer mouse report:** only `mouse_flush()` transmits, so movement or scrolling cannot clear a held button
+- **Checked HID sends:** a state machine advances only once its report is queued, so a busy endpoint cannot lose a release
+- **Build-time flash layout checks:** the build fails if the linker region, board flash size or sector size disagrees with the config sector layout
+- **Image sizes:** 22 KB (Pico 2) and 301 KB (Pico 2 W) as `.bin`. The `.uf2` files are about twice that, 44 KB and 603 KB, because each 512-byte UF2 block carries 256 bytes of firmware
+
+---
+
 ## Architecture
 
 ### Firmware (device-side)
@@ -58,7 +68,7 @@ The firmware is based on a **cooperative, non-preemptive scheduling loop**:
 ### Constraint model
 
 - No blocking delays (`sleep`, busy-wait loops) in behaviour logic
-- All timing is implemented using delta comparisons on timestamps
+- Elapsed-time checks use wrap-safe subtraction on timestamps. Activity deadlines use direct comparisons, because a run ends long before the 49.7-day clock wrap
 - USB stack responsiveness is preserved at all times
 
 ---
@@ -241,6 +251,16 @@ Device behaviour is observed host-side on Linux.
 
 - `sudo evtest` on the keyboard and mouse event nodes shows the raw event stream. The invariant: every key or button down has a matching up before the next unrelated event, and ALT is released cleanly after each ALT+TAB.
 - `sudo usbhid-dump -m 2e8a:0003 -e stream` shows raw reports. During a click hold the mouse button field stays set whilst only the delta bytes vary.
+
+---
+
+## Known issues
+
+| Severity | Location | Issue |
+|---|---|---|
+| Low | `src/usb_descriptors.c` | Product ID `0x0003` belongs to the RP2040 USB boot mode. |
+| Risk | `src/wifi_manager.c` | Worst-case main loop time with Wi-Fi has not been measured against the 5 ms HID interval. |
+| Risk | `inc/wifi_secrets.h` | The password is stored in plaintext in the firmware image and UF2 until it moves to the config sector. |
 
 ---
 

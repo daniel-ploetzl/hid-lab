@@ -1,0 +1,53 @@
+name: build
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+env:
+  PICO_SDK_TAG: "2.2.0"
+
+jobs:
+  firmware:
+    # Ubuntu 22.04 provides ARM GCC 10.3 and CMake 3.22, matching local builds.
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [pico2_w, pico2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+
+      - name: Fetch Pico SDK
+        run: |
+          git clone --depth 1 --branch "$PICO_SDK_TAG" --recurse-submodules --shallow-submodules \
+            https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
+          echo "PICO_SDK_PATH=$RUNNER_TEMP/pico-sdk" >> "$GITHUB_ENV"
+
+      - name: Build firmware
+        run: |
+          /usr/bin/cmake --version
+          arm-none-eabi-gcc --version
+          /usr/bin/cmake -S . -B build-${{ matrix.board }} -DPICO_BOARD=${{ matrix.board }}
+          /usr/bin/cmake --build build-${{ matrix.board }} -j"$(nproc)"
+
+      - name: Build host tool
+        run: gcc -Wall -Wextra -Werror src/write_config.c -Iinc -o write_config
+
+      - name: Write checksum
+        working-directory: build-${{ matrix.board }}
+        run: sha256sum hid_lab.uf2 > hid_lab.uf2.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hid_lab-${{ matrix.board }}
+          path: |
+            build-${{ matrix.board }}/hid_lab.uf2
+            build-${{ matrix.board }}/hid_lab.uf2.sha256
+          if-no-files-found: error

@@ -24,10 +24,12 @@
  */
 
 #include "input_tasks.h"
+#include "hid_assert.h"
 #include "pico/time.h"
 #include "pico/rand.h"
 #include "bsp/board.h"
 #include "tusb.h"
+#include <string.h>
 
 /* ───────── HID IDs ───────── */
 #define REPORT_ID_KEYBOARD  1
@@ -80,13 +82,13 @@ static inline uint32_t now_ms(void)
 
 static uint32_t rand_range(uint32_t min, uint32_t max)
 {
-	assert(min <= max);
+	HID_ASSERT(min <= max);
     return min + (get_rand_32() % (max - min + 1));
 }
 
 static int32_t rand_range_i32(int32_t min, int32_t max)
 {
-	assert(min <= max);
+	HID_ASSERT(min <= max);
     uint32_t span = (uint32_t)(max - min + 1);
     return min + (int32_t)(get_rand_32() % span);
 }

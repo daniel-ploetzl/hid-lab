@@ -36,9 +36,17 @@ target_compile_options(hid_lab PRIVATE
     -Werror
 )
 
+# Test only: milliseconds until the elapsed run time wraps. Leave at 0 for normal builds.
+set(HID_LAB_TEST_WRAP_LEAD_MS 0 CACHE STRING "Test only: ms until elapsed run time wraps")
+
+# Test only: fails an assertion at boot, to prove assertions survive Release builds.
+option(HID_LAB_TEST_ASSERT "Test only: fail an assertion at boot" OFF)
+
 # Exposes the linker region size to the build-time layout checks in src/main.c.
 target_compile_definitions(hid_lab PRIVATE
     HID_LAB_LINK_FLASH_BYTES=${PICO_FLASH_SIZE_BYTES}
+    HID_LAB_TEST_WRAP_LEAD_MS=${HID_LAB_TEST_WRAP_LEAD_MS}u
+    HID_LAB_TEST_ASSERT=$<BOOL:${HID_LAB_TEST_ASSERT}>
 )
 
 target_include_directories(hid_lab PRIVATE

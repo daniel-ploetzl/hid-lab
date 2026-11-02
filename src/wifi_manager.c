@@ -10,11 +10,10 @@
  */
 
 #include "wifi_manager.h"
-
-#include <stdint.h>
-
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
+#include "hid_assert.h"
+#include <stdint.h>
 
 /* Untracked until credentials move to the config sector. Without it the radio
  * still starts for the LED, but no join is attempted. */
@@ -62,12 +61,15 @@ static void set_state(wifi_state_t state, uint32_t now)
 
 static void schedule_retry(int status, uint32_t now)
 {
+    HID_ASSERT(s_radio_ok);
+
     /* A wrong password will not fix itself, so retry at the slowest rate. */
     s_retry_delay_ms = (status == CYW43_LINK_BADAUTH) ? BACKOFF_MAX_MS : s_backoff_ms;
 
     s_backoff_ms *= 2;
     if (s_backoff_ms > BACKOFF_MAX_MS)
         s_backoff_ms = BACKOFF_MAX_MS;
+    HID_ASSERT(s_backoff_ms <= BACKOFF_MAX_MS);
 
     /* Clears a half-finished join, such as associated but no DHCP lease. */
     cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
