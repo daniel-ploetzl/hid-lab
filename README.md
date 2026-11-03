@@ -16,7 +16,8 @@ It generates time-driven, non-deterministic keyboard and mouse activity for rese
 - **Cooperative non-blocking scheduling:** one main loop with no RTOS, threads or sleeping, so USB and Wi-Fi are serviced on every pass
 - **Single-writer mouse report:** only `mouse_flush()` transmits, so movement or scrolling cannot clear a held button
 - **Checked HID sends:** a state machine advances only once its report is queued, so a busy endpoint cannot lose a release
-- **Build-time flash layout checks:** the build fails if the linker region, board flash size or sector size disagrees with the config sector layout
+- **Build-time flash layout checks:** the build fails if the linker region, board flash size or sector size disagrees with the reserved sector layout
+- **Validated credential record:** Wi-Fi settings live in their own flash sector as a versioned record with a CRC-32, and an invalid record means no join
 - **Image sizes:** 22 KB (Pico 2) and 301 KB (Pico 2 W) as `.bin`. The `.uf2` files are about twice that, 44 KB and 603 KB, because each 512-byte UF2 block carries 256 bytes of firmware
 
 ---
@@ -51,7 +52,7 @@ It generates time-driven, non-deterministic keyboard and mouse activity for rese
 ### Host utility
 
 - `src/write_config.c`
-  Host-side tool that generates a UF2 payload to write configuration into a reserved flash sector.
+  Host-side tool that generates a UF2 payload to write the run time or Wi-Fi credentials into a reserved flash sector.
 
 ---
 
@@ -119,26 +120,27 @@ The device is implemented as a **composite HID interface with report IDs**:
 
 Pico 2 and Pico 2 W flash map (4 MB):
 
-- Firmware region: `0x10000000 .. 0x103FEFFF` (`0x003FF000` bytes)
+- Firmware region: `0x10000000 .. 0x103FDFFF` (`0x003FE000` bytes)
+- Reserved credentials sector: `0x103FE000 .. 0x103FEFFF`
 - Reserved config sector: `0x103FF000 .. 0x103FFFFF` (last 4 KB sector)
 
 ### Safety invariant
 
-The firmware image must end before the config sector. If it overlapped, `config_read_hours()` would read firmware bytes and silently fall back to `CONFIG_DEFAULT_HOURS`, and writing a config would overwrite part of the firmware.
+The firmware image must end before the reserved sectors. If it overlapped them, the firmware would read its own bytes as settings and fall back to `CONFIG_DEFAULT_HOURS` and no Wi-Fi, and writing settings would overwrite part of the firmware.
 
 Enforced at build time:
 
-- the `PICO_FLASH_SIZE_BYTES` CMake variable limits the linker's `FLASH` region to `0x003FF000` bytes, so an oversized image fails to link
-- `static_assert`s in `src/main.c` fail the build unless the linker region ends exactly at `CONFIG_FLASH_ADDR` and `flash_config.h` matches the board's flash size and sector size
-- a `_Static_assert` in `inc/flash_config.h` fails both the firmware and host builds if `pico_config_t` stops being the 8 bytes `write_config` writes
+- the `PICO_FLASH_SIZE_BYTES` CMake variable limits the linker's `FLASH` region to `0x003FE000` bytes, so an oversized image fails to link
+- `static_assert`s in `src/main.c` fail the build unless the linker region ends exactly at `CREDS_FLASH_ADDR` and `flash_config.h` matches the board's flash size and sector size
+- `_Static_assert`s in `inc/flash_config.h` fail both the firmware and host builds if `pico_config_t` or `wifi_creds_t` changes size
 - `PICO_BOARD` defaults to `pico2_w`, and CMake configuration fails for any non-RP2350 platform
 
 The checks exist because the layout is defined in two places, `CMakeLists.txt` and `inc/flash_config.h`. Without them, either side could change and the build would still succeed.
 
 Limits of this protection:
 
-- the reduced size applies to the linker only. C code still sees the board's real size in `PICO_FLASH_SIZE_BYTES`, and must: the SDK derives the flash device size from it and needs a power of two, and its bounds check would otherwise reject the config sector
-- writing only to `CONFIG_FLASH_ADDR` is a convention, not a restriction. `write_config` is the only writer in this repository, but nothing stops another UF2 or a flash API call from changing that sector
+- the reduced size applies to the linker only. C code still sees the board's real size in `PICO_FLASH_SIZE_BYTES`, and must: the SDK derives the flash device size from it and needs a power of two, and its bounds check would otherwise reject the reserved sectors
+- writing only to the reserved sectors is a convention, not a restriction. `write_config` is the only writer in this repository, but nothing stops another UF2 or a flash API call from changing them
 
 ---
 
@@ -153,11 +155,21 @@ Built when the board has a CYW43 radio; on a Pico 2 the same API compiles to inl
 
 ### Credentials
 
+Credentials are not built into the firmware. Connect the board in BOOTSEL mode and store them in its credentials sector:
+
 ```bash
-cp inc/wifi_secrets.example.h inc/wifi_secrets.h
+./write_config --wifi wpa2 "your-network"
 ```
 
-`inc/wifi_secrets.h` is gitignored. Without it the firmware makes no connection attempt. `WIFI_AUTH` selects the security mode and defaults to WPA2 when unset; set it to `CYW43_AUTH_WPA3_SAE_AES_PSK` for WPA3-Personal. There is no automatic fallback between the two. The password is stored in plaintext in the firmware image and UF2, so use a dedicated network and do not share those files.
+The tool asks for the password, or reads it from standard input, so it does not reach the shell history or process list. Use `wpa3` for WPA3-Personal. There is no automatic fallback between the two.
+
+The sector survives firmware updates, so this is needed once per board. Without a valid record the firmware makes no connection attempt. To remove the credentials from a board:
+
+```bash
+./write_config --wifi-clear
+```
+
+The password is stored in plaintext in the board's flash, so anyone with physical access can read it. Use a dedicated network.
 
 ---
 
@@ -203,11 +215,17 @@ gcc src/write_config.c -Iinc -o write_config
 
 ```bash
 ./write_config <hours>
+./write_config --wifi <wpa2|wpa3> <ssid>
+./write_config --wifi-clear
 ```
 
 ### Output
 
-Generates a UF2 payload that writes configuration data into the reserved flash sector.
+Generates a UF2 payload that writes one record into its reserved flash sector. Each write replaces only that sector, so the run time and the credentials are changed separately.
+
+### Credential record
+
+`wifi_creds_t` in `inc/flash_config.h` holds a magic value, version, security mode, SSID, password and CRC-32. The firmware makes no connection attempt unless every field is valid. The CRC detects corruption only; it does not protect the password.
 
 ---
 
@@ -260,7 +278,7 @@ Device behaviour is observed host-side on Linux.
 |---|---|---|
 | Low | `src/usb_descriptors.c` | Product ID `0x0003` belongs to the RP2040 USB boot mode. |
 | Risk | `src/wifi_manager.c` | Worst-case main loop time with Wi-Fi has not been measured against the 5 ms HID interval. |
-| Risk | `inc/wifi_secrets.h` | The password is stored in plaintext in the firmware image and UF2 until it moves to the config sector. |
+| Risk | `inc/flash_config.h` | The Wi-Fi password is stored in plaintext in the credentials sector, so physical access to the board reveals it. |
 
 ---
 

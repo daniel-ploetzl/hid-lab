@@ -10,26 +10,11 @@
  */
 
 #include "wifi_manager.h"
+#include "flash_config.h"
 #include "pico/cyw43_arch.h"
 #include "pico/time.h"
 #include "hid_assert.h"
 #include <stdint.h>
-
-/* Untracked until credentials move to the config sector. Without it the radio
- * still starts for the LED, but no join is attempted. */
-#if __has_include("wifi_secrets.h")
-#include "wifi_secrets.h"
-#else
-#define WIFI_SSID     ""
-#define WIFI_PASSWORD ""
-#endif
-
-/* Explicit on purpose: there is no fallback, so a WPA3 network can never be
- * silently downgraded. The driver's WPA3/WPA2 mode only configures WPA3 for a
- * station, so it would not reach a WPA2-only network either. */
-#ifndef WIFI_AUTH
-#define WIFI_AUTH CYW43_AUTH_WPA2_AES_PSK
-#endif
 
 #define JOIN_TIMEOUT_MS 30000u
 #define BACKOFF_MIN_MS   2000u
@@ -47,6 +32,7 @@ static bool         s_radio_ok;
 static uint32_t     s_state_since_ms;
 static uint32_t     s_backoff_ms = BACKOFF_MIN_MS;
 static uint32_t     s_retry_delay_ms;
+static const wifi_creds_t *s_creds;
 
 static inline uint32_t now_ms(void)
 {
@@ -78,7 +64,15 @@ static void schedule_retry(int status, uint32_t now)
 
 static void start_join(uint32_t now)
 {
-    int err = cyw43_arch_wifi_connect_async(WIFI_SSID, WIFI_PASSWORD, WIFI_AUTH);
+    HID_ASSERT(s_creds != NULL);
+
+    /* Explicit on purpose: there is no fallback, so a WPA3 network can never be
+     * silently downgraded. The driver's WPA3/WPA2 mode only configures WPA3 for a
+     * station, so it would not reach a WPA2-only network either. */
+    uint32_t auth = (s_creds->auth == CREDS_AUTH_WPA3) ? CYW43_AUTH_WPA3_SAE_AES_PSK
+                                                       : CYW43_AUTH_WPA2_AES_PSK;
+
+    int err = cyw43_arch_wifi_connect_async(s_creds->ssid, s_creds->key, auth);
     if (err)
         schedule_retry(CYW43_LINK_FAIL, now);
     else
@@ -95,7 +89,9 @@ void wifi_manager_init(void)
     s_radio_ok = true;
     cyw43_arch_enable_sta_mode();
 
-    if (WIFI_SSID[0] != '\0')
+    /* Without valid credentials the radio still runs the LED, but never joins. */
+    s_creds = creds_read();
+    if (s_creds)
         start_join(now_ms());
 }
 

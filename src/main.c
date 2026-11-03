@@ -27,8 +27,8 @@
 #include <assert.h>
 
 /* ───────── Flash reservation checks  ───────── */
-static_assert(CONFIG_FLASH_ADDR - CONFIG_FLASH_XIP_BASE == HID_LAB_LINK_FLASH_BYTES,
-              "linker FLASH region must end exactly at the config sector");
+static_assert(CREDS_FLASH_ADDR - CONFIG_FLASH_XIP_BASE == HID_LAB_LINK_FLASH_BYTES,
+              "linker FLASH region must end exactly at the credentials sector");
 static_assert(CONFIG_FLASH_TOTAL_BYTES == PICO_FLASH_SIZE_BYTES,
               "flash_config.h flash size must match the board");
 static_assert(CONFIG_SECTOR_SIZE_BYTES == FLASH_SECTOR_SIZE,
