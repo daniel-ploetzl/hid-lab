@@ -21,6 +21,7 @@
 #include "bsp/board.h"
 #include "tusb.h"
 #include "input_tasks.h"
+#include "reactivation.h"
 #include "wifi_manager.h"
 #include "flash_config.h"
 #include "hid_assert.h"
@@ -38,7 +39,9 @@ static_assert(CONFIG_SECTOR_SIZE_BYTES == FLASH_SECTOR_SIZE,
 
 static inline uint32_t now_ms(void)
 {
-    return to_ms_since_boot(get_absolute_time());
+    /* The lead is 0 in normal builds. A test build sets it so the counter wraps
+     * within minutes, to confirm the cycle survives the 49.7 day rollover. */
+    return to_ms_since_boot(get_absolute_time()) + HID_LAB_TEST_WRAP_LEAD_MS;
 }
 
 /* On the Pico 2 W each LED write is a bus transaction to the radio chip. */
@@ -62,27 +65,30 @@ int main(void)
     wifi_manager_init();
     tusb_init();
 
-    uint32_t duration_ms = config_read_hours() * MS_PER_HOUR;
-    HID_ASSERT(duration_ms >= CONFIG_HOURS_MIN * MS_PER_HOUR);
-    HID_ASSERT(duration_ms <= CONFIG_HOURS_MAX * MS_PER_HOUR);
-    /* Test builds move start ahead so now - start wraps within minutes, not 49.7 days. */
-    uint32_t start = now_ms() + HID_LAB_TEST_WRAP_LEAD_MS;
+    uint32_t active_ms = config_read_hours() * MS_PER_HOUR;
+    HID_ASSERT(active_ms >= CONFIG_HOURS_MIN * MS_PER_HOUR);
+    HID_ASSERT(active_ms <= CONFIG_HOURS_MAX * MS_PER_HOUR);
+
+    /* Active for the configured window, idle for the period, then repeat with no
+     * end. reactivation_update() keeps this wrap-safe, so no latch is needed. */
+    reactivation_t react;
+    reactivation_init(&react, active_ms, REACT_PERIOD_MS, now_ms());
 
     input_tasks_init();
 	led_update(true);
-
-    bool expired = false;
 
     while (1)
     {
         tud_task();
         wifi_manager_task();
         uint32_t now = now_ms();
-        bool was_expired = expired;
-        /* Latched: now - start wraps after 49.7 days and would restart activity. */
-        expired = expired || (now - start) >= duration_ms;
-        HID_ASSERT(expired || !was_expired);
-        bool active = !expired;
+        if (reactivation_update(&react, now))
+        {
+            /* Activation edge, once per window. The login sequence, type
+             * username, Return, password, Return, will run here once the
+             * credential store is in place. */
+        }
+        bool active = reactivation_is_active(&react);
         led_update(status_led_state(active, now));
         input_tasks_run(active);
     }

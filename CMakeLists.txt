@@ -27,6 +27,7 @@ endif()
 add_executable(hid_lab
     src/main.c
 	src/input_tasks.c
+    src/reactivation.c
     src/usb_descriptors.c
 )
 

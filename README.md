@@ -1,4 +1,4 @@
-# hid-lab — USB HID Behaviour Simulation Lab (Raspberry Pi Pico 2 / Pico 2 W)
+# hid-lab: USB HID Behaviour Simulation Lab (Raspberry Pi Pico 2 / Pico 2 W)
 
 ## Overview
 
@@ -29,11 +29,14 @@ It generates time-driven, non-deterministic keyboard and mouse activity for rese
 - `src/main.c`
   Cooperative scheduler:
   - runs TinyUSB device task (`tud_task()`)
-  - enforces runtime-duration limits
+  - drives the active then idle re-activation cycle
   - dispatches behaviour subsystems
 
 - `src/input_tasks.c`
   Behaviour engine implementing independent state machines for HID actions.
+
+- `src/reactivation.c`
+  Re-activation timer: the active then idle duty cycle that repeats for ever.
 
 - `src/wifi_manager.c` (Pico 2 W only)
   Non-blocking station state machine: connect, monitor link, reconnect with backoff.
@@ -62,14 +65,25 @@ The firmware is based on a **cooperative, non-preemptive scheduling loop**:
 
 - `tud_task()` must be called continuously for USB stack progress
 - `wifi_manager_task()` services the radio through `cyw43_arch_poll()` from the same loop, with no background thread or interrupt
+- `reactivation_update()` advances the active then idle cycle and signals the start of each active window
 - `input_tasks_run(active)` executes all HID behaviour logic
 - timing is derived from a monotonic millisecond clock:
   `to_ms_since_boot(get_absolute_time())`
 
+### Re-activation cycle
+
+Activity repeats on a fixed cycle rather than running once. The device is active for the configured window, idle for the period, then active again with no end.
+
+- the active window length is the stored `hours` value
+- the idle period is `REACT_PERIOD_MS`, a compile-time value, one hour for now
+- the first window opens at boot
+- each window begins with a one-shot edge, reserved for a login sequence that is not yet implemented
+- the timer keeps each phase well under the 49.7-day clock wrap, so the rollover does not disturb the cadence
+
 ### Constraint model
 
 - No blocking delays (`sleep`, busy-wait loops) in behaviour logic
-- Elapsed-time checks use wrap-safe subtraction on timestamps. Activity deadlines use direct comparisons, because a run ends long before the 49.7-day clock wrap
+- Elapsed-time checks use wrap-safe modular subtraction on timestamps. Each re-activation phase is bounded well under the 49.7-day clock wrap, so the cycle keeps its cadence across a rollover
 - USB stack responsiveness is preserved at all times
 
 ---
@@ -187,7 +201,7 @@ typedef struct {
 ### Validation rules:
 
 - `magic == 0xCAFEF00D`
-- `hours` in `[1, 24]`
+- `hours` in `[1, 24]`, the length of each active window in the re-activation cycle
 
 ### Fallback behaviour:
 
@@ -279,6 +293,8 @@ Device behaviour is observed host-side on Linux.
 | Low | `src/usb_descriptors.c` | Product ID `0x0003` belongs to the RP2040 USB boot mode. |
 | Risk | `src/wifi_manager.c` | Worst-case main loop time with Wi-Fi has not been measured against the 5 ms HID interval. |
 | Risk | `inc/flash_config.h` | The Wi-Fi password is stored in plaintext in the credentials sector, so physical access to the board reveals it. |
+| Low | `inc/reactivation.h` | The re-activation period is a compile-time value, so changing it between one hour, one day and one week needs a rebuild. |
+| Low | `src/input_tasks.c` | After a long idle, each behaviour whose timer has already elapsed fires once on the first active pass, a brief catch-up at the start of a window. |
 
 ---
 
