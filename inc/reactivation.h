@@ -15,15 +15,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* Default idle gap between active windows. One hour is the first test value.
- * Raise to a day (86400000) then a week (604800000) once the cadence is
- * confirmed. Moving this into the flash config sector is a later step. */
-#ifndef REACT_PERIOD_MS
-#define REACT_PERIOD_MS (60u * 60u * 1000u)
-#endif
-
 /* Largest phase the wrap-safe comparison allows, kept well under the 49.7 day
- * (2^32 ms) counter wrap. One week fits with wide margin. */
+ * (2^32 ms) counter wrap. One week fits with wide margin. The caller supplies
+ * the active window and the idle period, both read from the flash config. */
 #define REACT_MAX_PHASE_MS (14u * 24u * 60u * 60u * 1000u)
 
 typedef enum { REACT_IDLE, REACT_ACTIVE } react_phase_t;

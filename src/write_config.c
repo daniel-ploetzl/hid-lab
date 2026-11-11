@@ -3,8 +3,9 @@
  *  directly to the RP2350 BOOTSEL mount point.
  *
  * CONFIG LAYOUT IN FLASH (last 4KB sector, offset 0x3FF000):
- *   [0..3]  magic  = 0xCAFEF00D  (little-endian u32)
- *   [4..7]  hours  = N           (little-endian u32)
+ *   [0..3]   magic    = 0xCAFEF00E  (little-endian u32)
+ *   [4..7]   hours    = N           (little-endian u32)
+ *   [8..11]  period_s = N           (little-endian u32, re-activation gap)
  *
  * CREDENTIALS LAYOUT IN FLASH (sector before it, offset 0x3FE000):
  *   wifi_creds_t in flash_config.h, sealed with a CRC-32.
@@ -126,22 +127,66 @@ static int read_password(char *buf, size_t size)
     return 0;
 }
 
-static int write_hours(const char *arg)
+/* Accepts seconds, or an integer with a single unit suffix s m h d w. */
+static int parse_period_s(const char *arg, uint32_t *out)
 {
     char *end = NULL;
-    long hours = strtol(arg, &end, 10);
+    long long value = strtoll(arg, &end, 10);
+
+    /* Reject out-of-range before the multiply, so it cannot overflow. */
+    if (end == arg || value <= 0 || value > (long long)CONFIG_PERIOD_MAX_S)
+        return -1;
+
+    unsigned long long mult = 1;
+    if (*end != '\0')
+    {
+        if (end[1] != '\0')
+            return -1;
+        switch (*end)
+        {
+            case 's': mult = 1;      break;
+            case 'm': mult = 60;     break;
+            case 'h': mult = 3600;   break;
+            case 'd': mult = 86400;  break;
+            case 'w': mult = 604800; break;
+            default:  return -1;
+        }
+    }
+
+    unsigned long long secs = (unsigned long long)value * mult;
+    if (secs < CONFIG_PERIOD_MIN_S || secs > CONFIG_PERIOD_MAX_S)
+        return -1;
+
+    *out = (uint32_t)secs;
+    return 0;
+}
+
+/* The config sector holds both fields, so every write sets the run window and
+ * the re-activation period together. period_arg may be NULL, which keeps the
+ * one-week default. */
+static int write_run_config(const char *hours_arg, const char *period_arg)
+{
+    char *end = NULL;
+    long hours = strtol(hours_arg, &end, 10);
 
     if (*end != '\0' || hours < (long)CONFIG_HOURS_MIN || hours > (long)CONFIG_HOURS_MAX)
         return (fprintf(stderr, "Error: hours must be %ld-%ld (got %ld)\n",
                         (long)CONFIG_HOURS_MIN, (long)CONFIG_HOURS_MAX, hours), 1);
 
-    uint8_t cfg[8];
-    write_le32(cfg, CONFIG_MAGIC);
+    uint32_t period_s = CONFIG_DEFAULT_PERIOD_S;
+    if (period_arg != NULL && parse_period_s(period_arg, &period_s) != 0)
+        return (fprintf(stderr, "Error: period must be 1-%lu s, optional suffix s/m/h/d/w (got %s)\n",
+                        (unsigned long)CONFIG_PERIOD_MAX_S, period_arg), 1);
+
+    uint8_t cfg[12];
+    write_le32(cfg,     CONFIG_MAGIC);
     write_le32(cfg + 4, (uint32_t)hours);
+    write_le32(cfg + 8, period_s);
 
     if (write_uf2(CONFIG_FLASH_ADDR, cfg, sizeof(cfg)) != 0)
         return 1;
-    printf("Configured runtime: %ld hours\n", hours);
+    printf("Configured run window %ld h, re-activation period %lu s\n",
+           hours, (unsigned long)period_s);
     return 0;
 }
 
@@ -201,12 +246,12 @@ int main(int ac, char **av)
 {
     if (ac == 2 && strcmp(av[1], "--wifi-clear") == 0)
         return clear_credentials();
-    if (ac == 2 && av[1][0] != '-')
-        return write_hours(av[1]);
     if (ac == 4 && strcmp(av[1], "--wifi") == 0)
         return write_credentials(av[2], av[3]);
+    if ((ac == 2 || ac == 3) && av[1][0] != '-')
+        return write_run_config(av[1], ac == 3 ? av[2] : NULL);
 
-    fprintf(stderr, "Usage: %s <hours>\n", av[0]);
+    fprintf(stderr, "Usage: %s <hours> [period]    period e.g. 3600, 30m, 1h, 1d, 7d; default 7d\n", av[0]);
     fprintf(stderr, "       %s --wifi <wpa2|wpa3> <ssid>   (password from standard input)\n", av[0]);
     fprintf(stderr, "       %s --wifi-clear\n", av[0]);
     return 1;
