@@ -69,10 +69,17 @@ int main(void)
     HID_ASSERT(active_ms >= CONFIG_HOURS_MIN * MS_PER_HOUR);
     HID_ASSERT(active_ms <= CONFIG_HOURS_MAX * MS_PER_HOUR);
 
+    /* The idle period is read from the config sector in seconds. The maximum of
+     * one week is 604,800,000 ms, which fits in 32 bits and stays under the
+     * timer's phase ceiling. */
+    uint32_t period_ms = config_read_period_s() * 1000UL;
+    HID_ASSERT(period_ms >= CONFIG_PERIOD_MIN_S * 1000UL);
+    HID_ASSERT(period_ms <= CONFIG_PERIOD_MAX_S * 1000UL);
+
     /* Active for the configured window, idle for the period, then repeat with no
      * end. reactivation_update() keeps this wrap-safe, so no latch is needed. */
     reactivation_t react;
-    reactivation_init(&react, active_ms, REACT_PERIOD_MS, now_ms());
+    reactivation_init(&react, active_ms, period_ms, now_ms());
 
     input_tasks_init();
 	led_update(true);
